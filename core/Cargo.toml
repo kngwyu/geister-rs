@@ -1,0 +1,13 @@
+[package]
+name = "guister-core"
+version = "0.1.0"
+authors = ["kngwyu <yuji.kngw.80s.revive@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+derive_more = "0.13.0"
+yansi = "0.4.0"
+
+[dependencies.rect-iter]
+version = "0.2.2"
+default-features = false

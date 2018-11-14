@@ -1,0 +1,12 @@
+[package]
+name = "guiester-gpw-proto"
+version = "0.1.0"
+authors = ["kngwyu <yuji.kngw.80s.revive@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+
+
+[dependencies.guister-core]
+path = "../core/"
+version = "0.1.0"

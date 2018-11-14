@@ -1,0 +1,8 @@
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+lto = true
+
+[workspace]
+members = ["core", "gpw-proto"]
