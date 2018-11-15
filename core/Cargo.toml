@@ -1,5 +1,5 @@
 [package]
-name = "guister-core"
+name = "geister-core"
 version = "0.1.0"
 authors = ["kngwyu <yuji.kngw.80s.revive@gmail.com>"]
 edition = "2018"

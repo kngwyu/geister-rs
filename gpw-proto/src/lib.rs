@@ -1,5 +1,5 @@
-use guister_core::{
-    board::{Board, Cell, Ghost, Move, Position, GhostID, Direction},
+use geister_core::{
+    board::{Board, Cell, Direction, Ghost, GhostID, Move, Position},
     player::{Player, PlayerID},
 };
 use std::io::{self, prelude::*};
@@ -28,7 +28,7 @@ impl GpwPosition for Position {
 }
 
 pub trait GpwMove: Sized {
-    fn to_gpw(self, id: GhostID) -> String;    
+    fn to_gpw(self, id: GhostID) -> String;
 }
 
 impl GpwMove for Move {
@@ -43,47 +43,52 @@ impl GpwMove for Move {
     }
 }
 
-pub trait Gpwboard: Sized {
+pub trait GpwBoard: Sized {
     fn from_gpw<C>(s: &str, player: PlayerID) -> Result<Self, Error<C>>;
 }
 
-fn read1<T: str::FromStr, C>(s: &str, start: usize) -> Result<T, Error<C>> {
+fn read1<T: str::FromStr, C>(s: &str, start: usize) -> Result<T, Error<C>>
+where
+    <T as str::FromStr>::Err: ::std::fmt::Debug,
+{
     s[start..start + 1]
         .parse::<T>()
         .map_err(|_| Error::ParseError(s.to_owned()))
 }
 
-impl Gpwboard for Board {
+impl GpwBoard for Board {
     fn from_gpw<C>(s: &str, player: PlayerID) -> Result<Self, Error<C>> {
         let mut board = Board::default();
         for i in 0..8 {
             let start = 3 * i;
             let x: i8 = read1(s, start)?;
             let y: i8 = read1(s, start + 1)?;
-            let ghost = match read1::<u8, _>(s, start + 2)? {
-                b'R' => Ghost::Red,
-                b'B' => Ghost::Blue,
+            let ghost = match read1::<char, _>(s, start + 2)? {
+                'R' => Ghost::Red,
+                'B' => Ghost::Blue,
                 _ => continue,
             };
-            board[Position::new(x, y)] = Cell::owned(ghost, player, GhostID::from_u8(i as u8).unwrap());
+            board[Position::new(x, y)] =
+                Cell::owned(ghost, player, GhostID::from_u8(i as u8).unwrap());
         }
         for i in 0..8 {
-            let start = 3 * i;
+            let start = 3 * (i + 7);
             let x: i8 = read1(s, start)?;
             let y: i8 = read1(s, start + 1)?;
-            let ghost = match read1::<u8, _>(s, start + 2)? {
-                b'u' => Ghost::Unknown,
+            let ghost = match read1::<char, _>(s, start + 2)? {
+                'u' => Ghost::Unknown,
                 _ => continue,
             };
-            board[Position::new(x, y)] = Cell::owned(ghost, player.rev(), GhostID::from_u8(i as u8).unwrap());
+            board[Position::new(x, y)] =
+                Cell::owned(ghost, player.rev(), GhostID::from_u8(i as u8).unwrap());
         }
         Ok(board)
     }
 }
 
 pub trait GpwPlayer: Player {
-    fn gpw_step(&mut self, board: String) -> Result<String, Error<Self::Error>> {
-        let board = Board::from_gpw(&board, self.id())?;
+    fn gpw_step(&mut self, board: &str) -> Result<String, Error<Self::Error>> {
+        let board = Board::from_gpw(board, self.id())?;
         let mov = self.step(board).map_err(Error::Agent)?;
         let cell = self.board()[mov.pos];
         match cell {
@@ -102,11 +107,12 @@ fn addr_from_id(id: PlayerID) -> (Ipv4Addr, u16) {
     }
 }
 
+#[derive(Debug)]
 pub enum Error<C> {
     Agent(C),
     Io(io::Error),
     InvalidMove(Move),
-    Mismatch,
+    Mismatch(String),
     ParseError(String),
 }
 
@@ -116,40 +122,57 @@ impl<C> From<io::Error> for Error<C> {
     }
 }
 
-fn expect<C>(tcp: &mut TcpStream, expect: &str) -> Result<(), Error<C>> {
-    expect_fn(tcp, |s| s == expect)
+fn read(tcp: &mut TcpStream) -> io::Result<String> {
+    let mut res = String::new();
+    let mut buf = vec![0u8; 1024];
+    loop {
+        tcp.read(&mut buf)?;
+        let s = ::std::str::from_utf8(&buf).unwrap();
+        if let Some(pos) = s.find("\r\n") {
+            res += &s[..pos];
+            return Ok(res);
+        } else {
+            res += s;
+        }
+    }
 }
 
-fn expect_fn<C>(tcp: &mut TcpStream, ok: impl Fn(&str) -> bool) -> Result<(), Error<C>> {
-    let mut buf = String::new();
-    tcp.read_to_string(&mut buf)?;
-    if !ok(&buf) {
-        return Err(Error::Mismatch);
+fn expect<C>(tcp: &mut TcpStream, ok: impl Fn(&str) -> bool) -> Result<(), Error<C>> {
+    let s = read(tcp)?;
+    if !ok(&s) {
+        return Err(Error::Mismatch(s));
     }
     Ok(())
 }
 
-fn recv<C>(tcp: &mut TcpStream) -> Result<String, Error<C>> {
-    let mut buf = String::new();
-    tcp.read_to_string(&mut buf)?;
-    Ok(buf)
+fn expect_ok<C>(tcp: &mut TcpStream) -> Result<(), Error<C>> {
+    expect(tcp, |s| s.starts_with("OK"))
 }
 
-pub fn run_client<C: GpwPlayer>(client: &mut C, id: PlayerID) -> Result<(), Error<C::Error>> {
+pub fn run_client<C: GpwPlayer>(client: &mut C) -> Result<(), Error<C::Error>> {
+    let id = client.id();
     let start_pos = client.init(id).map_err(Error::Agent)?;
     let mut tcp = TcpStream::connect(addr_from_id(id))?;
-    expect(&mut tcp, "SET?")?;
+    expect(&mut tcp, |s| s == "SET?")?;
     let init_pos: Vec<_> = start_pos.iter().map(|x| x.init_pos().unwrap()).collect();
     write!(tcp, "SET:{}\r\n", str::from_utf8(&init_pos).unwrap())?;
-    expect(&mut tcp, "Ok\n\n")?;
+    expect_ok(&mut tcp)?;
     loop {
-        let board = recv(&mut tcp)?;
-        let mov = client.gpw_step(board)?;
-        tcp.write(mov.as_bytes())?;
-        expect_fn(&mut tcp, |s| match s {
-            "OK\r\n"| "OKR\r\n" | "OKB\r\n" => true,
-            _ => false,
-        })?;
+        let board = read(&mut tcp)?;
+        if board.starts_with("MOV?") {
+            let mov = client.gpw_step(&board[4..])?;
+            println!("{:?}", client.board());
+            tcp.write(mov.as_bytes())?;
+            expect_ok(&mut tcp)?;
+        } else if board.starts_with("LST") {
+            println!("LOST (´・ω・`)");
+            break;
+        } else if board.starts_with("WIN") {
+            println!("WIN (*´ω｀*)");
+            break;
+        } else {
+            return Err(Error::Mismatch(board.to_owned()));
+        }
     }
     Ok(())
 }

@@ -71,6 +71,15 @@ impl Direction {
             Direction::Right => Position::new(1, 0),
         }
     }
+    pub fn iter() -> impl Iterator<Item = Self> {
+        const ITER: [Direction; 4] = [
+            Direction::Up,
+            Direction::Down,
+            Direction::Left,
+            Direction::Right,
+        ];
+        ITER.iter().map(|&x| x)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -89,7 +98,7 @@ impl Move {
     }
 }
 
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GhostID {
     A,
     B,
@@ -129,11 +138,11 @@ impl GhostID {
     }
 }
 
-    impl fmt::Display for GhostID {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            fmt::Debug::fmt(self, f)
-        }
+impl fmt::Display for GhostID {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(self, f)
     }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Ghost {
@@ -155,6 +164,12 @@ impl Cell {
         cell.set_owner(owner);
         cell.set_id(id);
         Cell::Owned(cell)
+    }
+    pub fn owner(&self) -> Option<PlayerID> {
+        match self {
+            Cell::Owned(o) => Some(o.owner()),
+            Cell::Empty => None,
+        }
     }
 }
 

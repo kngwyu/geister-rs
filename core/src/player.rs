@@ -1,4 +1,4 @@
-use crate::board::{Board, Move, Position, BOARD_HEIGHT, GhostID};
+use crate::board::{Board, GhostID, Move, Position, BOARD_HEIGHT};
 use std::ops::Range;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -14,8 +14,16 @@ impl PlayerID {
             PlayerID::P2 => BOARD_HEIGHT - 2..BOARD_HEIGHT,
         }
     }
-    pub fn init(&self, mut f: impl FnMut(Position, GhostID))
-    {
+    pub fn init_pos(&self) -> Vec<Position> {
+        let mut out = vec![];
+        for x in 1..=4 {
+            for y in self.init_yrange() {
+                out.push(Position::new(x as i8, y as i8));
+            }
+        }
+        out
+    }
+    pub fn init(&self, mut f: impl FnMut(Position, GhostID)) {
         let mut cnt = 0;
         for x in 1..=4 {
             for y in self.init_yrange() {
@@ -23,7 +31,8 @@ impl PlayerID {
                 let ghost = match self {
                     PlayerID::P1 => GhostID::from_u8(7 - cnt),
                     PlayerID::P2 => GhostID::from_u8(cnt),
-                }.unwrap();
+                }
+                .unwrap();
                 f(pos, ghost);
                 cnt += 1;
             }
@@ -45,7 +54,3 @@ pub trait Player {
     fn step(&mut self, board: Board) -> Result<Move, Self::Error>;
     fn close(&mut self, _victory: bool) {}
 }
-
-
-
-
