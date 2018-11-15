@@ -1,5 +1,4 @@
-use crate::board::Board;
-use crate::board::{Move, BOARD_HEIGHT};
+use crate::board::{Board, Move, Position, BOARD_HEIGHT};
 use std::ops::Range;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -31,9 +30,7 @@ impl PlayerID {
 
 pub trait Player {
     type Error;
-    fn init(&mut self, _id: PlayerID) -> Result<(), Self::Error> {
-        Ok(())
-    }
-    fn step(&mut self, board: &Board) -> Result<Move, Self::Error>;
+    fn init(&mut self, id: PlayerID) -> Result<[Position; 4], Self::Error>;
+    fn step(&mut self, board: Board) -> Result<Move, Self::Error>;
     fn close(&mut self, _victory: bool) {}
 }

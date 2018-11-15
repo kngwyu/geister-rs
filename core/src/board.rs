@@ -5,6 +5,7 @@ use yansi::Paint;
 pub const BOARD_HEIGHT: usize = 6;
 pub const BOARD_WIDTH: usize = 6;
 use crate::player::PlayerID;
+use rect_iter::RectRange;
 
 fn check(n: i8, max: usize) -> bool {
     if n < 0 {
@@ -47,6 +48,12 @@ impl Position {
     }
 }
 
+impl From<(i8, i8)> for Position {
+    fn from((x, y): (i8, i8)) -> Position {
+        Position::new(x, y)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Hash, PartialEq, PartialOrd, Ord, Eq)]
 pub enum Direction {
     Up,
@@ -82,6 +89,17 @@ impl Move {
     }
 }
 
+pub enum GhostId {
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Ghost {
     Unknown,
@@ -98,6 +116,63 @@ pub enum Cell {
 impl Cell {
     pub fn owned(kind: Ghost, owner: PlayerID) -> Self {
         Cell::Owned { kind, owner }
+    }
+}
+
+pub struct OwnedCell(u8);
+
+impl OwnedCell {
+    const GHOST_MASK: u8 = 0b00000011;
+    const OWNER_MASK: u8 = 0b00000100;
+    const ID_MASK: u8 = 0b00111000;
+    const GHOST_OFFSET: usize = 0;
+    const OWNER_OFFSET: usize = 2;
+    const ID_OFFSET: usize = Self::OWNER_OFFSET + 1;
+    #[inline(always)]
+    fn get_mask(&self, mask: u8, offset: usize) -> u8 {
+        (self.0 & mask) >> offset
+    }
+    pub fn ghost(&self) -> Ghost {
+        match self.get_mask(Self::GHOST_MASK, Self::GHOST_OFFSET) {
+            0 => Ghost::Unknown,
+            1 => Ghost::Red,
+            2 => Ghost::Blue,
+            _ => unreachable!(),
+        }
+    }
+    pub fn owner(&self) -> PlayerID {
+        match self.get_mask(Self::OWNER_MASK, Self::OWNER_OFFSET) {
+            0 => PlayerID::P1,
+            1 => PlayerID::P2,
+            _ => unreachable!(),
+        }
+    }
+    pub fn id(&self) -> GhostID {
+        match self.get_mask(Self::GHOST_MASK, Self::GHOST_OFFSET) {
+            0 => PlayerID::P1,
+            1 => PlayerID::P2,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl fmt::Display for OwnedCell {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Cell::Owned { kind, owner } => match owner {
+                PlayerID::P1 => match kind {
+                    Ghost::Red => write!(f, "{}", Paint::red("▽")),
+                    Ghost::Blue => write!(f, "{}", Paint::blue("▽")),
+                    Ghost::Unknown => write!(f, "{}", Paint::white("▽")),
+                },
+                PlayerID::P2 => match kind {
+                    Ghost::Red => write!(f, "{}", Paint::red("△")),
+                    Ghost::Blue => write!(f, "{}", Paint::blue("△")),
+                    Ghost::Unknown => write!(f, "{}", Paint::white("△")),
+                },
+            },
+            Cell::Empty => write!(f, "  "),
+        }
     }
 }
 
@@ -136,6 +211,9 @@ impl Default for Board {
 }
 
 impl Board {
+    pub fn iter() -> RectRange<i8> {
+        RectRange::zero_start(BOARD_WIDTH as i8, BOARD_HEIGHT as i8).unwrap()
+    }
     fn init_with(&mut self, red_pos: [Position; 4], player: PlayerID) {
         for &pos in red_pos.iter() {
             self[pos] = Cell::owned(Ghost::Red, player);
