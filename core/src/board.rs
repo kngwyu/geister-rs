@@ -89,7 +89,7 @@ impl Move {
     }
 }
 
-pub enum GhostId {
+pub enum GhostID {
     A,
     B,
     C,
@@ -98,6 +98,34 @@ pub enum GhostId {
     F,
     G,
     H,
+}
+
+impl GhostID {
+    pub fn from_u8(u: u8) -> Option<Self> {
+        Some(match u {
+            0 => GhostID::A,
+            1 => GhostID::B,
+            2 => GhostID::C,
+            3 => GhostID::D,
+            4 => GhostID::E,
+            5 => GhostID::F,
+            6 => GhostID::G,
+            7 => GhostID::H,
+            _ => return None,
+        })
+    }
+    pub fn as_u8(&self) -> u8 {
+        match self {
+            GhostID::A => 0,
+            GhostID::B => 1,
+            GhostID::C => 2,
+            GhostID::D => 3,
+            GhostID::E => 4,
+            GhostID::F => 5,
+            GhostID::G => 6,
+            GhostID::H => 7,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -109,16 +137,18 @@ pub enum Ghost {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Cell {
-    Owned { kind: Ghost, owner: PlayerID },
+    Owned(OwnedCell),
     Empty,
 }
 
 impl Cell {
-    pub fn owned(kind: Ghost, owner: PlayerID) -> Self {
-        Cell::Owned { kind, owner }
+    pub fn owned(kind: Ghost, owner: PlayerID, id: GhostID) -> Self {
+        let mut cell = OwnedCell(0);
+        cell.set_ghost(kind);
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OwnedCell(u8);
 
 impl OwnedCell {
@@ -131,6 +161,25 @@ impl OwnedCell {
     #[inline(always)]
     fn get_mask(&self, mask: u8, offset: usize) -> u8 {
         (self.0 & mask) >> offset
+    }
+    fn set_ghost(&mut self, ghost: Ghost) {
+        let offset = match ghost {
+            Ghost::Unknown => 0,
+            Ghost::Red => 1,
+            Ghost::Blue => 2,
+        };
+        self.0 |= offset;
+    }
+    fn set_owner(&mut self, owner: PlayerID) {
+        let offset = match owner {
+            PlayerID::P1 => 0,
+            PlayerID::P2 => 1,
+        };
+        self.0 |= offset << Self::OWNER_OFFSET;
+    }
+    fn set_id(&mut self, id: GhostID) {
+        let offset = id.as_u8();
+        self.0 |= offset << Self::OWNER_OFFSET;
     }
     pub fn ghost(&self) -> Ghost {
         match self.get_mask(Self::GHOST_MASK, Self::GHOST_OFFSET) {
@@ -148,30 +197,24 @@ impl OwnedCell {
         }
     }
     pub fn id(&self) -> GhostID {
-        match self.get_mask(Self::GHOST_MASK, Self::GHOST_OFFSET) {
-            0 => PlayerID::P1,
-            1 => PlayerID::P2,
-            _ => unreachable!(),
-        }
+        GhostID::from_int(self.get_mask(Self::ID_MASK, Self::ID_OFFSET) as usize).unwrap()
     }
 }
 
 impl fmt::Display for OwnedCell {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Cell::Owned { kind, owner } => match owner {
-                PlayerID::P1 => match kind {
-                    Ghost::Red => write!(f, "{}", Paint::red("▽")),
-                    Ghost::Blue => write!(f, "{}", Paint::blue("▽")),
-                    Ghost::Unknown => write!(f, "{}", Paint::white("▽")),
-                },
-                PlayerID::P2 => match kind {
-                    Ghost::Red => write!(f, "{}", Paint::red("△")),
-                    Ghost::Blue => write!(f, "{}", Paint::blue("△")),
-                    Ghost::Unknown => write!(f, "{}", Paint::white("△")),
-                },
+        let (kind, owner) = (self.ghost(), self.owner());
+        match owner {
+            PlayerID::P1 => match kind {
+                Ghost::Red => write!(f, "{}", Paint::red("▽")),
+                Ghost::Blue => write!(f, "{}", Paint::blue("▽")),
+                Ghost::Unknown => write!(f, "{}", Paint::white("▽")),
             },
-            Cell::Empty => write!(f, "  "),
+            PlayerID::P2 => match kind {
+                Ghost::Red => write!(f, "{}", Paint::red("△")),
+                Ghost::Blue => write!(f, "{}", Paint::blue("△")),
+                Ghost::Unknown => write!(f, "{}", Paint::white("△")),
+            },
         }
     }
 }
@@ -179,18 +222,7 @@ impl fmt::Display for OwnedCell {
 impl fmt::Display for Cell {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Cell::Owned { kind, owner } => match owner {
-                PlayerID::P1 => match kind {
-                    Ghost::Red => write!(f, "{}", Paint::red("▽")),
-                    Ghost::Blue => write!(f, "{}", Paint::blue("▽")),
-                    Ghost::Unknown => write!(f, "{}", Paint::white("▽")),
-                },
-                PlayerID::P2 => match kind {
-                    Ghost::Red => write!(f, "{}", Paint::red("△")),
-                    Ghost::Blue => write!(f, "{}", Paint::blue("△")),
-                    Ghost::Unknown => write!(f, "{}", Paint::white("△")),
-                },
-            },
+            Cell::Owned(cell) => write!(f, "{}", cell),
             Cell::Empty => write!(f, "  "),
         }
     }
