@@ -75,20 +75,21 @@ impl Direction {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Move {
-    pub from: Position,
+    pub pos: Position,
     pub direction: Direction,
 }
 
 impl Move {
     pub fn to(self) -> Position {
-        let Move { from, direction } = self;
-        from + direction.to_pos()
+        let Move { pos, direction } = self;
+        pos + direction.to_pos()
     }
     pub fn to_indices(self) -> (usize, usize) {
-        (self.from.to_index(), self.to().to_index())
+        (self.pos.to_index(), self.to().to_index())
     }
 }
 
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GhostID {
     A,
     B,
@@ -128,6 +129,12 @@ impl GhostID {
     }
 }
 
+    impl fmt::Display for GhostID {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            fmt::Debug::fmt(self, f)
+        }
+    }
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Ghost {
     Unknown,
@@ -145,6 +152,9 @@ impl Cell {
     pub fn owned(kind: Ghost, owner: PlayerID, id: GhostID) -> Self {
         let mut cell = OwnedCell(0);
         cell.set_ghost(kind);
+        cell.set_owner(owner);
+        cell.set_id(id);
+        Cell::Owned(cell)
     }
 }
 
@@ -179,7 +189,7 @@ impl OwnedCell {
     }
     fn set_id(&mut self, id: GhostID) {
         let offset = id.as_u8();
-        self.0 |= offset << Self::OWNER_OFFSET;
+        self.0 |= offset << Self::ID_OFFSET;
     }
     pub fn ghost(&self) -> Ghost {
         match self.get_mask(Self::GHOST_MASK, Self::GHOST_OFFSET) {
@@ -197,7 +207,7 @@ impl OwnedCell {
         }
     }
     pub fn id(&self) -> GhostID {
-        GhostID::from_int(self.get_mask(Self::ID_MASK, Self::ID_OFFSET) as usize).unwrap()
+        GhostID::from_u8(self.get_mask(Self::ID_MASK, Self::ID_OFFSET)).unwrap()
     }
 }
 
@@ -246,46 +256,29 @@ impl Board {
     pub fn iter() -> RectRange<i8> {
         RectRange::zero_start(BOARD_WIDTH as i8, BOARD_HEIGHT as i8).unwrap()
     }
-    fn init_with(&mut self, red_pos: [Position; 4], player: PlayerID) {
-        for &pos in red_pos.iter() {
-            self[pos] = Cell::owned(Ghost::Red, player);
-        }
-        for x in 1..=4 {
-            for y in player.init_range() {
-                let pos = Position::new(x, y as i8);
-                let ghost = if red_pos.contains(&pos) {
-                    Ghost::Red
-                } else {
-                    Ghost::Blue
-                };
-                self[pos] = Cell::owned(ghost, player);
-            }
-        }
-        for x in 1..=4 {
-            for y in player.init_range_rev() {
-                let pos = Position::new(x, y as i8);
-                self[pos] = Cell::owned(Ghost::Unknown, player.rev());
-            }
-        }
-    }
-    pub fn init_for_player(red_pos: [Position; 4]) -> Option<Self> {
-        let player = {
-            let mut iter = red_pos.iter();
-            let player = iter.next().and_then(|p| p.in_init_area())?;
-            for p in iter {
-                if p.in_init_area()? != player {
-                    return None;
-                }
-            }
-            player
-        };
+    pub fn init_for_player(red_pos: [Position; 4], player: PlayerID) -> Option<Self> {
         let mut board = Board::default();
-        board.init_with(red_pos, player);
+        let mut cnt = 0;
+        player.init(|pos, id| {
+            let ghost = if red_pos.contains(&pos) {
+                cnt += 1;
+                Ghost::Red
+            } else {
+                Ghost::Blue
+            };
+            board[pos] = Cell::owned(ghost, player, id);
+        });
+        if cnt != 4 {
+            return None;
+        }
+        player.rev().init(|pos, id| {
+            board[pos] = Cell::owned(Ghost::Unknown, player.rev(), id);
+        });
         Some(board)
     }
     pub fn can_move(&self, mov: Move) -> Result<bool, ErrorKind> {
-        if !mov.from.is_valid() {
-            return Err(ErrorKind::IndexError(mov.from));
+        if !mov.pos.is_valid() {
+            return Err(ErrorKind::IndexError(mov.pos));
         }
         let to = mov.to();
         if !to.is_valid() {
@@ -295,13 +288,13 @@ impl Board {
     }
     pub fn can_move_nocheck(&self, mov: Move) -> bool {
         let (from, to) = mov.to_indices();
-        let owner1 = match self.inner[from] {
-            Cell::Owned { kind: _, owner } => owner,
+        let owner = match self.inner[from] {
+            Cell::Owned(o) => o.owner(),
             Cell::Empty => return false,
         };
         match self.inner[to] {
             Cell::Empty => return true,
-            Cell::Owned { owner: owner2, .. } => owner1 != owner2,
+            Cell::Owned(o) => o.owner() != owner,
         }
     }
 }
@@ -344,6 +337,6 @@ fn print_board() {
         Position::new(3, 0),
         Position::new(4, 1),
     ];
-    let board = Board::init_for_player(pos);
+    let board = Board::init_for_player(pos, PlayerID::P1).unwrap();
     println!("{:?}", board);
 }
