@@ -1,0 +1,28 @@
+[package]
+name = "geister-ai"
+version = "0.1.0"
+authors = ["kngwyu <yuji.kngw.80s.revive@gmail.com>"]
+edition = "2018"
+workspace = "../"
+
+[lib]
+name = "geister_ai"
+path = "src/lib.rs"
+
+[[bin]]
+name = "geister-gpw-ai"
+path = "src/gpw.rs"
+
+[dependencies]
+clap = "2.32.0"
+rand = "0.6.0"
+num-traits = "0.2.6"
+rand_xorshift = "0.1.0"
+
+[dependencies.geister-core]
+path = "../core/"
+version = "0.1.0"
+
+[dependencies.geister-gpw-proto]
+path = "../gpw-proto/"
+version = "0.1.0"
