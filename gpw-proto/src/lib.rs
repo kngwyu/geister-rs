@@ -3,7 +3,7 @@ use geister_core::{
     player::{Player, PlayerID},
 };
 use std::io::{self, prelude::*};
-use std::net::{Ipv4Addr, TcpStream};
+use std::net::{IpAddr, TcpStream};
 use std::str;
 
 pub trait GpwPosition {
@@ -90,6 +90,7 @@ pub trait GpwPlayer: Player {
     fn gpw_step(&mut self, board: &str) -> Result<String, Error<Self::Error>> {
         let board = Board::from_gpw(board, self.id())?;
         let mov = self.step(board).map_err(Error::Agent)?;
+        println!("{:?}", mov);
         let cell = self.board()[mov.pos];
         match cell {
             Cell::Owned(o) => Ok(mov.to_gpw(o.id())),
@@ -99,13 +100,6 @@ pub trait GpwPlayer: Player {
 }
 
 impl<P: Player> GpwPlayer for P {}
-
-fn addr_from_id(id: PlayerID) -> (Ipv4Addr, u16) {
-    match id {
-        PlayerID::P1 => (Ipv4Addr::new(127, 0, 0, 1), 10000),
-        PlayerID::P2 => (Ipv4Addr::new(127, 0, 0, 1), 10001),
-    }
-}
 
 #[derive(Debug)]
 pub enum Error<C> {
@@ -126,8 +120,8 @@ fn read(tcp: &mut TcpStream) -> io::Result<String> {
     let mut res = String::new();
     let mut buf = vec![0u8; 1024];
     loop {
-        tcp.read(&mut buf)?;
-        let s = ::std::str::from_utf8(&buf).unwrap();
+        let n = tcp.read(&mut buf)?;
+        let s = ::std::str::from_utf8(&buf[..n]).unwrap();
         if let Some(pos) = s.find("\r\n") {
             res += &s[..pos];
             return Ok(res);
@@ -149,29 +143,39 @@ fn expect_ok<C>(tcp: &mut TcpStream) -> Result<(), Error<C>> {
     expect(tcp, |s| s.starts_with("OK"))
 }
 
-pub fn run_client<C: GpwPlayer>(client: &mut C) -> Result<(), Error<C::Error>> {
+fn port(id: PlayerID) -> u16 {
+    match id {
+        PlayerID::P1 => 10000,
+        PlayerID::P2 => 10001            ,
+    }
+}
+
+pub fn run_client<C: GpwPlayer>(client: &mut C, addr: IpAddr) -> Result<(), Error<C::Error>> {
     let id = client.id();
-    let start_pos = client.init(id).map_err(Error::Agent)?;
-    let mut tcp = TcpStream::connect(addr_from_id(id))?;
+    let start_pos = client.init(id).map_err(Error::Agent)?;    
+    let mut tcp = TcpStream::connect((addr, port(id)))?;
     expect(&mut tcp, |s| s == "SET?")?;
     let init_pos: Vec<_> = start_pos.iter().map(|x| x.init_pos().unwrap()).collect();
     write!(tcp, "SET:{}\r\n", str::from_utf8(&init_pos).unwrap())?;
     expect_ok(&mut tcp)?;
     loop {
         let board = read(&mut tcp)?;
-        if board.starts_with("MOV?") {
-            let mov = client.gpw_step(&board[4..])?;
-            println!("{:?}", client.board());
-            tcp.write(mov.as_bytes())?;
-            expect_ok(&mut tcp)?;
-        } else if board.starts_with("LST") {
-            println!("LOST (´・ω・`)");
-            break;
-        } else if board.starts_with("WIN") {
-            println!("WIN (*´ω｀*)");
-            break;
-        } else {
-            return Err(Error::Mismatch(board.to_owned()));
+        match &board[..4] {
+            "MOV?" => {
+                let mov = client.gpw_step(&board[4..])?;
+                println!("{:?}", client.board());
+                tcp.write(mov.as_bytes())?;
+                expect_ok(&mut tcp)?;
+            },
+            "LST:" => {
+                println!("LOSE (´・ω・`)");
+                break;                
+            },
+            "WON:" => {
+                println!("WIN (*´ω｀*)");
+                break;
+            },
+            _ => return Err(Error::Mismatch(board.to_owned())),
         }
     }
     Ok(())

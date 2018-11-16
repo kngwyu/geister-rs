@@ -241,7 +241,7 @@ fn bounds_to_range<T: PrimInt>(r: impl RangeBounds<T>) -> Range<T> {
 }
 
 /// wrapper of XorShiftRng
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RngHandle(XorShiftRng);
 
 impl Default for RngHandle {
