@@ -93,6 +93,14 @@ impl Direction {
         ];
         ITER.iter().map(|&x| x)
     }
+    pub fn rev(self) -> Self {
+        match self {
+            Direction::Up => Direction::Down,
+            Direction::Down => Direction::Up,
+            Direction::Left => Direction::Right,
+            Direction::Right => Direction::Left,
+        }
+    }
     pub fn is_ordinal(&self) -> bool {
         match self {
             Direction::Up | Direction::Down => false,

@@ -1,5 +1,5 @@
 use geister_core::{
-    board::{Board, Cell, Direction, Ghost, GhostID, Move, Position},
+    board::{Board, Cell, Direction, Ghost, GhostID, Move, Position, BOARD_HEIGHT, BOARD_WIDTH},
     player::{Player, PlayerID},
 };
 use std::io::{self, prelude::*};
@@ -8,6 +8,7 @@ use std::str;
 
 pub trait GpwPosition {
     fn init_pos(&self) -> Option<u8>;
+    fn reverse_by_id(self, player: PlayerID) -> Self;
 }
 
 impl GpwPosition for Position {
@@ -25,15 +26,26 @@ impl GpwPosition for Position {
             _ => return None,
         })
     }
+    fn reverse_by_id(self, player: PlayerID) -> Self {        
+        if player == PlayerID::P1 {
+            Position::new(BOARD_WIDTH as i8 - self.x - 1, BOARD_HEIGHT as i8 - self.y - 1)
+        } else {
+            self
+        }
+    }
 }
 
 pub trait GpwMove: Sized {
-    fn to_gpw(self, id: GhostID) -> String;
+    fn to_gpw(self, id: GhostID, player: PlayerID) -> String;
 }
 
 impl GpwMove for Move {
-    fn to_gpw(self, id: GhostID) -> String {
-        let d = match self.direction {
+    fn to_gpw(self, id: GhostID, player: PlayerID) -> String {
+        let d = match player {
+            PlayerID::P1 => self.direction.rev(),
+            PlayerID::P2 => self.direction,
+        };
+        let d = match d {
             Direction::Up => 'N',
             Direction::Down => 'S',
             Direction::Left => 'W',
@@ -68,18 +80,18 @@ impl GpwBoard for Board {
                 'B' => Ghost::Blue,
                 _ => continue,
             };
-            board[Position::new(x, y)] =
+            board[Position::new(x, y).reverse_by_id(player)] =
                 Cell::owned(ghost, player, GhostID::from_u8(i as u8).unwrap());
         }
         for i in 0..8 {
-            let start = 3 * (i + 7);
+            let start = 3 * (i + 8);
             let x: i8 = read1(s, start)?;
             let y: i8 = read1(s, start + 1)?;
             let ghost = match read1::<char, _>(s, start + 2)? {
                 'u' => Ghost::Unknown,
                 _ => continue,
             };
-            board[Position::new(x, y)] =
+            board[Position::new(x, y).reverse_by_id(player)] =
                 Cell::owned(ghost, player.rev(), GhostID::from_u8(i as u8).unwrap());
         }
         Ok(board)
@@ -93,7 +105,7 @@ pub trait GpwPlayer: Player {
         println!("{:?}", mov);
         let cell = self.board()[mov.pos];
         match cell {
-            Cell::Owned(o) => Ok(mov.to_gpw(o.id())),
+            Cell::Owned(o) => Ok(mov.to_gpw(o.id(), self.id())),
             Cell::Empty => Err(Error::InvalidMove(mov)),
         }
     }
@@ -160,6 +172,7 @@ pub fn run_client<C: GpwPlayer>(client: &mut C, addr: IpAddr) -> Result<(), Erro
     expect_ok(&mut tcp)?;
     loop {
         let board = read(&mut tcp)?;
+        println!("{:?}", board);
         match &board[..4] {
             "MOV?" => {
                 let mov = client.gpw_step(&board[4..])?;
@@ -173,6 +186,10 @@ pub fn run_client<C: GpwPlayer>(client: &mut C, addr: IpAddr) -> Result<(), Erro
             },
             "WON:" => {
                 println!("WIN (*´ω｀*)");
+                break;
+            },
+            "DRW:" => {
+                println!("drow (>_<)");
                 break;
             },
             _ => return Err(Error::Mismatch(board.to_owned())),

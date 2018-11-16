@@ -4,15 +4,37 @@ use crate::metadata::MetaDataList;
 use crate::random;
 
 
-#[derive(Clone, Copy, Debug, Default, Add, Sub, AddAssign, SubAssign, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, Add, Sub, AddAssign, SubAssign, Eq, PartialEq, PartialOrd, Ord, Mul)]
 struct Eval(i64);
 
 impl Eval {
     fn lost() -> Self {
-        Eval(-1000)
+        Eval(-2000)
     }
-    fn around() -> Self {
-        Eval(-100)
+    fn around(ghost: Ghost) -> Self {
+        match ghost {
+            Ghost::Blue => Eval(-50),
+            Ghost::Red => Eval(50),
+            _ => Eval(0),
+        }
+    }
+    fn phase(player: PlayerID, pos: Position) -> Self {
+        match player {
+            PlayerID::P1 => {
+                if pos.y <= 2 {
+                    Eval(-50)
+                } else {
+                    Eval(50)
+                }
+            }
+            PlayerID::P2 => {
+                if pos.y >= 3 {
+                    Eval(50)
+                } else {
+                    Eval(50)
+                }
+            }
+        }
     }
 }
 
@@ -54,6 +76,7 @@ impl PlayerT for Player {
         self.id
     }
     fn init(&mut self, id: PlayerID) -> Result<[Position; 4], Self::Error> {
+        assert_eq!(id, self.id);
         self.id = id;
         Ok(random::random_init(id, &mut self.rng))
     }
@@ -79,7 +102,6 @@ impl PlayerT for Player {
                 }
             }
         }
-        let idx = self.rng.range(0..cand.len());
         let mut evals = vec![];
         for mov in cand {
             let mut board = self.board.clone();
@@ -100,7 +122,7 @@ impl PlayerT for Player {
                 if pos.is_valid() {
                     if let Cell::Owned(o) = board[pos] {
                         if o.owner() == self.id.rev() {
-                            eval += Eval::around();
+                            eval.0 += Eval::around(o.ghost()).0 * Eval::phase(o.owner(), pos).0;
                         }
                     }
                 }
@@ -108,7 +130,7 @@ impl PlayerT for Player {
             evals.push((mov, eval));
         }
         evals.sort_by_key(|e| e.1);
-        Ok(evals[idx].0)
+        Ok(evals.last().unwrap().0)
     }
 }
 
